@@ -22,58 +22,54 @@
 #include "lwip/sys.h"
 #include <lwip/netdb.h>
 
+#include "driver/uart.h"
 
-#define PORT                        CONFIG_EXAMPLE_PORT
+#include "led_strip.h"
+#include "status.h"
+
+extern led_strip_handle_t led_strip;
+
+// #define PORT                        CONFIG_EXAMPLE_PORT
+#define PORT                        3334
 #define KEEPALIVE_IDLE              CONFIG_EXAMPLE_KEEPALIVE_IDLE
 #define KEEPALIVE_INTERVAL          CONFIG_EXAMPLE_KEEPALIVE_INTERVAL
 #define KEEPALIVE_COUNT             CONFIG_EXAMPLE_KEEPALIVE_COUNT
 
-static const char *TAG = "example";
+static const char *TAG = "tcp_server";
 
-#pragma pack(1)
-struct SocketMsg {
-  uint8_t btn1 : 2;
-  uint8_t btn2 : 1;
-  uint8_t btn3 : 1;
-  uint8_t btn4 : 1;
-  uint8_t pole : 3;
-  uint16_t ch1 : 11;
-  uint16_t ch2 : 11;
-  uint8_t reverse1 : 2;
-  uint16_t ch3 : 11;
-  uint16_t ch4 : 11;
-  uint8_t reverse2 : 2;
-};
-#pragma pack()
 
 
 static void do_retransmit(const int sock)
 {
     int len;
-    struct SocketMsg smsg;
+
     do {
 //        len = recv(sock, rx_buffer, sizeof(rx_buffer) - 1, 0);
-        len = read(sock, (uint8_t *)(&smsg),sizeof(smsg));
+        len = recv(sock, (uint8_t *)(&smsg)+1,sizeof(smsg)-1,0);
+
         if (len < 0) {
             ESP_LOGE(TAG, "Error occurred during receiving: errno %d", errno);
         } else if (len == 0) {
             ESP_LOGW(TAG, "Connection closed");
         } else {
+            // uart_write_bytes(UART_NUM_1, &smsg, sizeof(smsg));
+
 //            rx_buffer[len] = 0; // Null-terminate whatever is received and treat it like a string
 //            ESP_LOGI(TAG, "Received %d bytes: %s", len, rx_buffer);
-        		printf("/*%d,%d,%d,%d,%d,%d,%d,%d,%d*/\n",smsg.btn1,smsg.btn2,smsg.btn3,smsg.btn4,smsg.ch1,smsg.ch2,smsg.ch3,smsg.ch4,smsg.pole);
+//        		printf("/*%d,%d,%d,%d,%d,%d,%d,%d,%d*/\n",smsg.btn1,smsg.btn2,smsg.btn3,smsg.btn4,smsg.ch1,smsg.ch2,smsg.ch3,smsg.ch4,smsg.pole);
             // send() can return less bytes than supplied length.
             // Walk-around for robust implementation.
 
 //            int to_write = len;
 //            while (to_write > 0) {
-//                int written = send(sock, rx_buffer + (len - to_write), to_write, 0);
-//                if (written < 0) {
-//                    ESP_LOGE(TAG, "Error occurred during sending: errno %d", errno);
-//                }
+               int written = send(sock, (uint8_t *)(&CS), sizeof(CS), 0);
+               if (written < 0) {
+                   ESP_LOGE(TAG, "Error occurred during sending: errno %d", errno);
+               }
 //                to_write -= written;
 //            }
         }
+        vTaskDelay(100 / portTICK_PERIOD_MS);
     } while (len > 0);
 }
 

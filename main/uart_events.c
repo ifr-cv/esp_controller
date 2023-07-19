@@ -13,8 +13,12 @@
 #include "freertos/queue.h"
 #include "driver/uart.h"
 #include "esp_log.h"
+#include "driver/gpio.h"
+
+#include "status.h"
 
 static const char *TAG = "uart_events";
+
 
 /**
  * This example shows how to use the UART driver to handle special UART events.
@@ -29,12 +33,32 @@ static const char *TAG = "uart_events";
  * - Pin assignment: TxD (default), RxD (default)
  */
 
-#define EX_UART_NUM UART_NUM_0
+#define EX_UART_NUM UART_NUM_1
 #define PATTERN_CHR_NUM    (3)         /*!< Set the number of consecutive and identical characters received by receiver which defines a UART pattern*/
 
 #define BUF_SIZE (1024)
 #define RD_BUF_SIZE (BUF_SIZE)
-static QueueHandle_t uart0_queue;
+static QueueHandle_t uart1_queue;
+
+static const int RX_BUF_SIZE = 1024;
+static const int TX_BUF_SIZE = 1024;
+
+#define TXD_PIN (GPIO_NUM_4)
+#define RXD_PIN (GPIO_NUM_5)
+void uart_init(void) 
+{
+    const uart_config_t uart_config = {
+        .baud_rate = 115200,
+        .data_bits = UART_DATA_8_BITS,
+        .parity = UART_PARITY_DISABLE,
+        .stop_bits = UART_STOP_BITS_1,
+        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+        .source_clk = UART_SCLK_DEFAULT,
+    };
+    ESP_ERROR_CHECK(uart_driver_install(UART_NUM_1, RX_BUF_SIZE * 2, TX_BUF_SIZE * 2, 20, &uart1_queue, 0));
+    ESP_ERROR_CHECK(uart_param_config(UART_NUM_1, &uart_config));
+    ESP_ERROR_CHECK(uart_set_pin(UART_NUM_1, TXD_PIN, RXD_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
+}
 
 void uart_event_task(void *pvParameters)
 {
@@ -43,7 +67,7 @@ void uart_event_task(void *pvParameters)
     uint8_t* dtmp = (uint8_t*) malloc(RD_BUF_SIZE);
     for(;;) {
         //Waiting for UART event.
-        if(xQueueReceive(uart0_queue, (void * )&event, (TickType_t)portMAX_DELAY)) {
+        if(xQueueReceive(uart1_queue, (void * )&event, (TickType_t)portMAX_DELAY)) {
             bzero(dtmp, RD_BUF_SIZE);
             ESP_LOGI(TAG, "uart[%d] event:", EX_UART_NUM);
             switch(event.type) {
@@ -64,7 +88,7 @@ void uart_event_task(void *pvParameters)
                     // The ISR has already reset the rx FIFO,
                     // As an example, we directly flush the rx buffer here in order to read more data.
                     uart_flush_input(EX_UART_NUM);
-                    xQueueReset(uart0_queue);
+                    xQueueReset(uart1_queue);
                     break;
                 //Event of UART ring buffer full
                 case UART_BUFFER_FULL:
@@ -72,7 +96,7 @@ void uart_event_task(void *pvParameters)
                     // If buffer full happened, you should consider encreasing your buffer size
                     // As an example, we directly flush the rx buffer here in order to read more data.
                     uart_flush_input(EX_UART_NUM);
-                    xQueueReset(uart0_queue);
+                    xQueueReset(uart1_queue);
                     break;
                 //Event of UART RX break detected
                 case UART_BREAK:
@@ -116,6 +140,48 @@ void uart_event_task(void *pvParameters)
     dtmp = NULL;
     vTaskDelete(NULL);
 }
+
+int sendData(const char* logName, const char* data)
+{
+    const int len = strlen(data);
+    const int txBytes = uart_write_bytes(UART_NUM_1, data, len);
+    ESP_LOGI(logName, "Wrote %d bytes", txBytes);
+    return txBytes;
+}
+
+void tx_task(void *arg)
+{
+    static const char *TX_TASK_TAG = "TX_TASK";
+    esp_log_level_set(TX_TASK_TAG, ESP_LOG_INFO);
+//    uint8_t* data = (uint8_t*) malloc(TX_BUF_SIZE+1);
+    while (1) {
+        // sendData(TX_TASK_TAG, "data");
+        // *data = &smsg;
+        uart_write_bytes(UART_NUM_1, &smsg, sizeof(smsg)-2);
+        // printf("/*%d,%d,%d,%d,%d,%d,%d,%d,%d*/\n",smsg.btn1,smsg.btn2,smsg.btn3,smsg.btn4,smsg.ch1,smsg.ch2,smsg.ch3,smsg.ch4,smsg.pole);
+
+        vTaskDelay(10 / portTICK_PERIOD_MS);
+        // ESP_LOGI(TX_TASK_TAG, "Wrote %d bytes", sizeof(smsg));
+
+    }
+}
+
+void rx_task(void *arg)
+{
+    static const char *RX_TASK_TAG = "RX_TASK";
+    esp_log_level_set(RX_TASK_TAG, ESP_LOG_INFO);
+    uint8_t* data = (uint8_t*) malloc(RX_BUF_SIZE+1);
+    while (1) {
+        const int rxBytes = uart_read_bytes(UART_NUM_1, data, RX_BUF_SIZE, 1000 / portTICK_PERIOD_MS);
+        if (rxBytes > 0) {
+            data[rxBytes] = 0;
+            ESP_LOGI(RX_TASK_TAG, "Read %d bytes: '%s'", rxBytes, data);
+            ESP_LOG_BUFFER_HEXDUMP(RX_TASK_TAG, data, rxBytes, ESP_LOG_INFO);
+        }
+    }
+    free(data);
+}
+
 
 //void app_main(void)
 //{

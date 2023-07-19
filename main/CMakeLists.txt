@@ -6,7 +6,10 @@ idf_component_register(
     	"main.c"        # list the source files of this component
     	"station.c"
     	"tcp_server.c"
+        "udp_server.c"
     	"uart_events.c"
+        "led.c"
+        "communication_delay.c"
     INCLUDE_DIRS        # optional, add here public include directories
     	"includes"
     PRIV_INCLUDE_DIRS   # optional, add here private include directories
